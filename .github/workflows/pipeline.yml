@@ -1,107 +1,96 @@
-name: ci
+name: CI
 
 on:
   push:
     branches:
       - main
+    tags:
+      - 'v0.72.19-apeirora.*'
   pull_request:
     types:
       - opened
+      - reopened
       - synchronize
 
 permissions:
-  contents: write
-  id-token: write
-  issues: write
-  packages: write
-  pull-requests: write
-  attestations: write
+  contents: read
 
 concurrency:
-  group: ${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   lint:
-    uses: platform-mesh/.github/.github/workflows/job-golang-lint.yml@main
-    with:
-      useTask: true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8
+      - run: golangci-lint run --timeout 15m ./...
 
   test:
-    uses: ./.github/workflows/job-golang-test-source.yml
-    secrets: inherit
-    with:
-      runsOn: 'ubuntu-latest-large'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Test non-e2e packages
+        run: go list ./... | grep -v '/test/e2e/kind$' | xargs go test
 
-  docker-build:
-    if: github.event_name == 'pull_request'
-    uses: platform-mesh/.github/.github/workflows/job-docker-build-push.yml@main
-    with:
-      imageTagName: ghcr.io/platform-mesh/platform-mesh-operator
-    secrets: inherit
+  image:
+    needs: [lint, test]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - if: startsWith(github.ref, 'refs/tags/')
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: ${{ startsWith(github.ref, 'refs/tags/') }}
+          tags: ghcr.io/apeirora/showroom-platform-mesh-operator:${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || github.sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/apeirora/showroom-platform-mesh-operator
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ github.ref_name }}
+      - if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        with:
+          subject-name: ghcr.io/apeirora/showroom-platform-mesh-operator
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
 
   quality-gate:
     if: always()
     permissions: {}
-    needs: [lint, test, docker-build]
+    needs: [lint, test, image]
     runs-on: ubuntu-latest
     timeout-minutes: 1
     steps:
       - name: Check results
+        env:
+          IMAGE_RESULT: ${{ needs.image.result }}
+          LINT_RESULT: ${{ needs.lint.result }}
+          TEST_RESULT: ${{ needs.test.result }}
         run: |
-          if [[ "${{ needs.lint.result }}" != "success" ]]; then
-            echo "lint failed"
-            exit 1
-          fi
-          if [[ "${{ needs.test.result }}" != "success" ]]; then
-            echo "test failed"
-            exit 1
-          fi
-          # docker-build is skipped on main pushes — allow skipped
-          if [[ "${{ needs.docker-build.result }}" != "success" && "${{ needs.docker-build.result }}" != "skipped" ]]; then
-            echo "docker-build failed"
-            exit 1
-          fi
-
-  create-version:
-    if: github.ref == 'refs/heads/main'
-    uses: platform-mesh/.github/.github/workflows/job-create-version.yml@main
-    secrets: inherit
-
-  docker-build-push:
-    if: github.ref == 'refs/heads/main'
-    needs: [create-version, lint, test]
-    uses: platform-mesh/.github/.github/workflows/job-docker-build-push.yml@main
-    with:
-      imageTagName: ghcr.io/platform-mesh/platform-mesh-operator
-      version: ${{ needs.create-version.outputs.version }}
-      multiarch: true
-    secrets: inherit
-
-  update-version:
-    if: github.ref == 'refs/heads/main'
-    needs: [create-version, docker-build-push]
-    uses: platform-mesh/.github/.github/workflows/job-chart-version-update.yml@main
-    secrets: inherit
-    with:
-      appVersion: ${{ needs.create-version.outputs.version }}
-      chart: platform-mesh-operator
-      targetRepository: platform-mesh/helm-charts
-
-  sbom:
-    if: github.ref == 'refs/heads/main'
-    needs: [create-version, docker-build-push]
-    uses: platform-mesh/.github/.github/workflows/job-sbom.yml@main
-    with:
-      imageReference: ghcr.io/platform-mesh/platform-mesh-operator:${{ needs.create-version.outputs.version }}
-
-  image-ocm:
-    if: github.ref == 'refs/heads/main'
-    needs: [create-version, docker-build-push, sbom]
-    uses: platform-mesh/.github/.github/workflows/job-image-ocm.yml@main
-    secrets: inherit
-    with:
-      imageReference: ghcr.io/platform-mesh/platform-mesh-operator:${{ needs.create-version.outputs.version }}
-      appVersion: ${{ needs.create-version.outputs.version }}
-      repoName: platform-mesh-operator
-      commit: ${{ github.sha }}
+          test "$LINT_RESULT" = success
+          test "$TEST_RESULT" = success
+          test "$IMAGE_RESULT" = success
