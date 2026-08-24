@@ -47,6 +47,11 @@ func TestCoreAPIExportUsesDetailViewExtensionsSchema(t *testing.T) {
 	var export map[string]interface{}
 	require.NoError(t, yaml.Unmarshal([]byte(rendered), &export))
 	require.Equal(t, "apis.kcp.io/v1alpha2", export["apiVersion"])
+	metadata := export["metadata"].(map[string]interface{})
+	annotations := metadata["annotations"].(map[string]interface{})
+	compatibilityClaims := annotations["apis.v1alpha2.kcp.io/v1alpha1-permission-claims"].(string)
+	require.Equal(t, 7, strings.Count(compatibilityClaims, `"all":true`))
+	require.NotContains(t, compatibilityClaims, `"all":false`)
 
 	resources, found, err := unstructured.NestedSlice(export, "spec", "resources")
 	require.NoError(t, err)

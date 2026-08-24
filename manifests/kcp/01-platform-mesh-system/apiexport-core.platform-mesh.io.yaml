@@ -1,6 +1,9 @@
 apiVersion: apis.kcp.io/v1alpha2
 kind: APIExport
 metadata:
+  annotations:
+    apis.v1alpha2.kcp.io/v1alpha1-permission-claims: >-
+      [{"group":"tenancy.kcp.io","resource":"workspaces","all":true,"identityHash":"{{ .apiExportRootTenancyKcpIoIdentityHash }}"},{"group":"tenancy.kcp.io","resource":"workspacetypes","all":true,"identityHash":"{{ .apiExportRootTenancyKcpIoIdentityHash }}"},{"group":"apis.kcp.io","resource":"apibindings","all":true},{"group":"apis.kcp.io","resource":"apiexports","all":true},{"group":"apis.kcp.io","resource":"apiresourceschemas","all":true},{"group":"core.kcp.io","resource":"logicalclusters","all":true},{"resource":"secrets","all":true}]
   creationTimestamp: null
   name: core.platform-mesh.io
 spec:
