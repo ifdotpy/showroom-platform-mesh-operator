@@ -2,6 +2,14 @@
 > This Repository is under development and not ready for productive use. It is in an alpha stage. That means APIs and concepts may change on short notice including breaking changes or complete removal of apis.
 
 # platform-mesh-operator
+
+> [!NOTE]
+> This ApeiroRA Showroom downstream is based on upstream
+> [`v0.72.19`](https://github.com/platform-mesh/platform-mesh-operator/releases/tag/v0.72.19).
+> It backports the generic `ProviderMetadata.spec.detailViewExtensions` contract without
+> adopting the newer profile-based installation model. Use the upstream operator unless
+> this compatibility backport is required.
+
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/platform-mesh/platform-mesh-operator/badge)](https://scorecard.dev/viewer/?uri=github.com/platform-mesh/platform-mesh-operator)
 
 The platform-mesh-operator helps bootstrap new platform-mesh environment during initial setup. It does so by reconciling and `Kind: PlatformMesh` resource which looks like this
@@ -310,4 +318,3 @@ Please refer to the [CONTRIBUTING.md](CONTRIBUTING.md) file in this repository f
 Please refer to our [Code of Conduct](https://github.com/platform-mesh/.github/blob/main/CODE_OF_CONDUCT.md) for information on the expected conduct for contributing to Platform Mesh.
 
 <p align="center"><img alt="Bundesministerium für Wirtschaft und Energie (BMWE)-EU funding logo" src="https://apeirora.eu/assets/img/BMWK-EU.png" width="400"/></p>
-
