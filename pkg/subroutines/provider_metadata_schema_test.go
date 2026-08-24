@@ -43,9 +43,41 @@ func TestCoreAPIExportUsesDetailViewExtensionsSchema(t *testing.T) {
 	contents, err := os.ReadFile("../../manifests/kcp/01-platform-mesh-system/apiexport-core.platform-mesh.io.yaml")
 	require.NoError(t, err)
 
-	manifest := string(contents)
-	require.Contains(t, manifest, "- "+providerMetadataSchemaName)
-	require.False(t, strings.Contains(manifest, "v250725-732d200.providermetadatas.ui.platform-mesh.io"))
+	rendered := strings.ReplaceAll(string(contents), "{{ .apiExportRootTenancyKcpIoIdentityHash }}", "test-identity-hash")
+	var export map[string]interface{}
+	require.NoError(t, yaml.Unmarshal([]byte(rendered), &export))
+	require.Equal(t, "apis.kcp.io/v1alpha2", export["apiVersion"])
+
+	resources, found, err := unstructured.NestedSlice(export, "spec", "resources")
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Len(t, resources, 7)
+
+	var providerMetadataResources []map[string]interface{}
+	resourceKeys := make(map[string]struct{}, len(resources))
+	for _, resource := range resources {
+		entry := resource.(map[string]interface{})
+		key := entry["group"].(string) + "/" + entry["name"].(string)
+		_, duplicate := resourceKeys[key]
+		require.False(t, duplicate, "duplicate APIExport resource %s", key)
+		resourceKeys[key] = struct{}{}
+		require.Equal(t, map[string]interface{}{"crd": map[string]interface{}{}}, entry["storage"])
+		if entry["group"] == "ui.platform-mesh.io" && entry["name"] == "providermetadatas" {
+			providerMetadataResources = append(providerMetadataResources, entry)
+		}
+	}
+
+	require.Len(t, providerMetadataResources, 1)
+	require.Equal(t, providerMetadataSchemaName, providerMetadataResources[0]["schema"])
+
+	permissionClaims, found, err := unstructured.NestedSlice(export, "spec", "permissionClaims")
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Len(t, permissionClaims, 7)
+	for _, permissionClaim := range permissionClaims {
+		claim := permissionClaim.(map[string]interface{})
+		require.Equal(t, []interface{}{"*"}, claim["verbs"])
+	}
 }
 
 func readManifest(t *testing.T, path string) map[string]interface{} {
